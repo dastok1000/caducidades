@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; media-src 'self' blob: mediastream:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+  <meta name="referrer" content="no-referrer">
+  <title>Caducidades</title>
+  <meta name="description" content="Apunta lo que tienes en casa y te aviso antes de que caduque. Los datos se quedan en tu móvil.">
+  <meta name="theme-color" content="#14532d">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Caducidades">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" sizes="180x180">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip" href="#main">Saltar al contenido</a>
+  <header class="top">
+    <h1><img src="icons/icon.svg" alt="" width="36" height="36"> Caducidades</h1>
+    <nav class="tabs" aria-label="Secciones">
+      <button type="button" class="tab" data-view="lista" aria-current="page">Lista</button>
+      <button type="button" class="tab" data-view="anadir">Añadir</button>
+      <button type="button" class="tab" data-view="historial">Historial</button>
+      <button type="button" class="tab" data-view="avisos">Avisos</button>
+    </nav>
+  </header>
+
+  <main id="main" tabindex="-1">
+    <div id="update" class="update" role="status" hidden>
+      <p>Hay una versión nueva de la app.</p>
+      <div class="acciones">
+        <button type="button" class="btn btn-primary" id="btn-update">Actualizar</button>
+        <button type="button" class="btn" id="btn-update-later">Más tarde</button>
+      </div>
+    </div>
+    <div id="aviso" class="aviso" role="alert" hidden></div>
+
+    <!-- LISTA -->
+    <section id="view-lista" class="view" aria-labelledby="t-lista">
+      <h2 id="t-lista">Lo que tienes en casa</h2>
+      <div class="error-box" id="err-lista" role="alert" tabindex="-1" hidden>
+        <p class="error-text"></p>
+        <button type="button" class="btn btn-small btn-light" data-close-error>Cerrar</button>
+      </div>
+      <p class="resumen" id="resumen" aria-live="polite"></p>
+      <ul id="lista" class="items"></ul>
+      <div id="vacia" class="vacia" hidden>
+        <p>Todavía no has apuntado nada.</p>
+        <button type="button" class="btn btn-primary" data-goto="anadir">Añadir el primer producto</button>
+      </div>
+      <p class="pie" id="pie-copia"><button type="button" class="enlace" data-goto="copia">💾 Copia de seguridad (exportar o importar)</button></p>
+      <p class="pie" id="pie-instalar"><button type="button" class="enlace" data-goto="instalar">📲 Cómo instalarla en el móvil</button></p>
+    </section>
+
+    <!-- AÑADIR / EDITAR -->
+    <section id="view-anadir" class="view" aria-labelledby="t-anadir" hidden>
+      <h2 id="t-anadir">Añadir producto</h2>
+      <div class="error-box" id="err-anadir" role="alert" tabindex="-1" hidden>
+        <p class="error-text"></p>
+        <button type="button" class="btn btn-small btn-light" data-close-error>Cerrar</button>
+      </div>
+      <form id="form" novalidate>
+        <input type="hidden" name="id" id="f-id">
+
+        <div class="campo">
+          <label for="f-barcode">Código de barras <span class="opcional">(opcional)</span></label>
+          <div class="fila">
+            <input id="f-barcode" name="barcode" inputmode="numeric" autocomplete="off" maxlength="32" aria-describedby="scan-info e-barcode">
+            <button type="button" id="btn-scan" class="btn" hidden>📷 Escanear</button>
+          </div>
+          <p id="scan-info" class="ayuda"></p>
+          <p id="e-barcode" class="error" hidden></p>
+        </div>
+
+        <div class="campo">
+          <label for="f-name">Nombre</label>
+          <input id="f-name" name="name" required maxlength="80" autocomplete="off" aria-describedby="e-name">
+          <p id="e-name" class="error" hidden></p>
+        </div>
+
+        <div class="campo">
+          <label for="f-expiry">Fecha de caducidad</label>
+          <input id="f-expiry" name="expiry" type="date" required aria-describedby="e-expiry">
+          <div class="rapidas" role="group" aria-label="Fechas rápidas">
+            <button type="button" class="btn btn-small" data-plus="1">Mañana</button>
+            <button type="button" class="btn btn-small" data-plus="3">+3 días</button>
+            <button type="button" class="btn btn-small" data-plus="7">+1 semana</button>
+            <button type="button" class="btn btn-small" data-plus="30">+1 mes</button>
+          </div>
+          <p id="e-expiry" class="error" hidden></p>
+        </div>
+
+        <div class="fila2">
+          <div class="campo">
+            <label for="f-quantity">Cantidad</label>
+            <input id="f-quantity" name="quantity" type="number" inputmode="numeric" min="1" max="999" step="1" value="1" aria-describedby="e-quantity">
+            <p id="e-quantity" class="error" hidden></p>
+          </div>
+          <div class="campo">
+            <label for="f-category">Categoría</label>
+            <select id="f-category" name="category" aria-describedby="e-category"></select>
+            <p id="e-category" class="error" hidden></p>
+          </div>
+        </div>
+
+        <div class="campo">
+          <span class="label" id="l-photo">Foto <span class="opcional">(opcional)</span></span>
+          <div class="fila-fotos" role="group" aria-labelledby="l-photo">
+            <button type="button" class="btn" id="btn-camara">📷 Cámara</button>
+            <button type="button" class="btn" id="btn-galeria">🖼 Galería</button>
+          </div>
+          <input id="f-photo" class="oculto" name="photo" type="file" accept="image/*" capture="environment" tabindex="-1" aria-hidden="true">
+          <input id="f-photo-gal" class="oculto" name="photo-gal" type="file" accept="image/*" tabindex="-1" aria-hidden="true">
+          <p class="ayuda">«Cámara» abre la cámara para hacer la foto; «Galería» deja elegir una foto que ya tengas. Se reduce en el móvil antes de guardarla.</p>
+          <p id="e-photo" class="error" role="alert" hidden></p>
+          <div id="foto-prev" class="foto-prev" hidden>
+            <img id="foto-img" alt="Foto del producto">
+            <button type="button" id="btn-quitar-foto" class="btn btn-small">Quitar foto</button>
+          </div>
+        </div>
+
+        <div class="acciones">
+          <button type="submit" class="btn btn-primary" id="btn-guardar">Guardar</button>
+          <button type="button" class="btn" id="btn-cancelar">Cancelar</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- HISTORIAL -->
+    <section id="view-historial" class="view" aria-labelledby="t-historial" hidden>
+      <h2 id="t-historial">Historial</h2>
+      <div class="error-box" id="err-historial" role="alert" tabindex="-1" hidden>
+        <p class="error-text"></p>
+        <button type="button" class="btn btn-small btn-light" data-close-error>Cerrar</button>
+      </div>
+      <p class="resumen" id="resumen-hist"></p>
+      <ul id="historial" class="items"></ul>
+      <p id="hist-vacio" class="vacia" hidden>Aquí aparecerá lo que marques como consumido o tirado.</p>
+      <div class="acciones"><button type="button" class="btn" id="btn-mas-hist" hidden>Ver más</button></div>
+    </section>
+
+    <!-- AVISOS -->
+    <section id="view-avisos" class="view" aria-labelledby="t-avisos" hidden>
+      <h2 id="t-avisos">Avisos</h2>
+      <div class="error-box" id="err-avisos" role="alert" tabindex="-1" hidden>
+        <p class="error-text"></p>
+        <button type="button" class="btn btn-small btn-light" data-close-error>Cerrar</button>
+      </div>
+      <p>Cada vez que abras la app verás arriba un aviso con lo caducado y lo que caduca en 3 días o menos.</p>
+      <p id="notif-estado" class="estado-notif"></p>
+      <div class="acciones">
+        <button type="button" class="btn btn-primary" id="btn-notif" hidden>Activar avisos del sistema</button>
+        <button type="button" class="btn" id="btn-notif-prueba" hidden>Enviar un aviso de prueba</button>
+      </div>
+      <h3>Importante</h3>
+      <ul class="notas">
+        <li>No hay ningún servidor: los avisos salen cuando abres o usas la app. En algunos Android con la app instalada puede revisarse sola de vez en cuando, pero no está garantizado.</li>
+        <li>En iPhone, los avisos solo funcionan con la app añadida a la pantalla de inicio y con iOS 16.4 o posterior.</li>
+        <li>Tus datos solo están en este dispositivo. Si borras los datos del navegador o desinstalas la app, se pierden: haz de vez en cuando una «Copia de seguridad».</li>
+      </ul>
+      <div class="acciones">
+        <button type="button" class="btn" data-goto="instalar">📲 Cómo instalarla</button>
+        <button type="button" class="btn" data-goto="copia">💾 Copia de seguridad</button>
+      </div>
+      <p class="version" id="version">Versión 0.1.2 · prototipo</p>
+    </section>
+
+    <!-- INSTALAR -->
+    <section id="view-instalar" class="view" aria-labelledby="t-instalar" hidden>
+      <h2 id="t-instalar">Instalar la app</h2>
+      <div class="error-box" id="err-instalar" role="alert" tabindex="-1" hidden>
+        <p class="error-text"></p>
+        <button type="button" class="btn btn-small btn-light" data-close-error>Cerrar</button>
+      </div>
+      <p id="inst-estado" class="estado-notif"></p>
+      <div class="acciones"><button type="button" class="btn btn-primary" id="btn-instalar-ya" hidden>Instalar ahora</button></div>
+      <div class="guia" id="guia-android">
+        <h3>En Android (Chrome)</h3>
+        <ol>
+          <li>Abre la app en Chrome.</li>
+          <li>Pulsa el menú <strong>⋮</strong> (arriba a la derecha).</li>
+          <li>Elige «<strong>Instalar app</strong>» o «<strong>Añadir a pantalla de inicio</strong>».</li>
+          <li>Ábrela desde el icono nuevo de la pantalla de inicio.</li>
+        </ol>
+      </div>
+      <div class="guia" id="guia-iphone">
+        <h3>En iPhone (Safari)</h3>
+        <ol>
+          <li>Abre la app en <strong>Safari</strong>.</li>
+          <li>Pulsa <strong>Compartir</strong> (el cuadrado con una flecha hacia arriba).</li>
+          <li>Elige «<strong>Añadir a pantalla de inicio</strong>» y pulsa «Añadir».</li>
+          <li>Ábrela desde el icono. Así funcionan los avisos (iOS 16.4 o posterior) y no se borran tus datos.</li>
+        </ol>
+      </div>
+      <div class="guia" id="guia-pc">
+        <h3>En el ordenador (Chrome o Edge)</h3>
+        <ol>
+          <li>Pulsa el icono de instalar de la barra de direcciones, o el menú y «Instalar Caducidades».</li>
+        </ol>
+      </div>
+      <p class="ayuda">Para instalarla, la dirección tiene que ser HTTPS o «localhost». Tus datos se quedan solo en este dispositivo y en esta dirección.</p>
+      <p id="inst-almacen" class="ayuda"></p>
+      <p class="ayuda">Cada dirección guarda sus propios datos. Para llevarlos de una a otra (por ejemplo, de la prueba en el PC a la versión publicada, o a otro móvil), usa <button type="button" class="enlace" data-goto="copia">«Copia de seguridad»</button>.</p>
+      <div class="acciones"><button type="button" class="btn" data-goto="lista">Volver a la lista</button></div>
+    </section>
+
+    <!-- COPIA DE SEGURIDAD -->
+    <section id="view-copia" class="view" aria-labelledby="t-copia" hidden>
+      <h2 id="t-copia">Copia de seguridad</h2>
+      <div class="error-box" id="err-copia" role="alert" tabindex="-1" hidden>
+        <p class="error-text"></p>
+        <button type="button" class="btn btn-small btn-light" data-close-error>Cerrar</button>
+      </div>
+      <p>Tus datos solo están en este móvil. Con una copia puedes guardarlos fuera (en Archivos, en tu nube o enviándotela) y recuperarlos, o pasarlos a otro móvil o a otra dirección de la app.</p>
+
+      <h3>Exportar</h3>
+      <p class="ayuda">La copia es un archivo <strong>.json</strong> con todos los productos, el historial y <strong>las fotos dentro</strong>. No incluye los ajustes de avisos.</p>
+      <div class="acciones"><button type="button" class="btn btn-primary" id="btn-exportar">Crear copia</button></div>
+      <div id="export-listo" class="confirm" hidden>
+        <p id="export-info"></p>
+        <div class="acciones">
+          <button type="button" class="btn btn-primary" id="btn-compartir" hidden>Compartir o guardar…</button>
+          <button type="button" class="btn" id="btn-descargar">Descargar el archivo</button>
+        </div>
+      </div>
+      <p id="export-estado" class="estado-notif" role="status" aria-live="polite"></p>
+
+      <h3>Importar</h3>
+      <p class="ayuda">Elige un archivo de copia de Caducidades. Antes de cambiar nada te digo qué va a pasar y te pregunto. Si el archivo no es válido, no se cambia nada.</p>
+      <div class="acciones"><button type="button" class="btn" id="btn-importar">Elegir archivo de copia</button></div>
+      <input id="f-importar" class="oculto" type="file" accept=".json,application/json" tabindex="-1" aria-hidden="true">
+      <p id="import-estado" class="estado-notif" role="status" aria-live="polite"></p>
+      <div id="import-confirm" class="confirm" hidden>
+        <p id="import-resumen" tabindex="-1"></p>
+        <div class="opcion">
+          <button type="button" class="btn btn-primary" id="btn-imp-combinar">Combinar con lo que hay</button>
+          <p class="ayuda" id="imp-combinar-txt"></p>
+        </div>
+        <div class="opcion">
+          <button type="button" class="btn btn-danger" id="btn-imp-sustituir">Sustituir todo por la copia</button>
+          <p class="ayuda" id="imp-sustituir-txt"></p>
+        </div>
+        <div class="acciones"><button type="button" class="btn" id="btn-imp-cancelar">Cancelar</button></div>
+      </div>
+
+      <h3>Productos repetidos</h3>
+      <ul class="notas">
+        <li>Cada producto tiene un identificador propio que va en la copia. Es «el mismo» producto solo si tiene el mismo identificador.</li>
+        <li><strong>Combinar</strong>: se añaden los que no están; si uno ya está, se queda la versión cambiada más tarde (si es igual, la del móvil). No se borra nada.</li>
+        <li><strong>Sustituir</strong>: se borra lo de este móvil y queda exactamente lo de la copia.</li>
+        <li>Dos productos con el mismo nombre o código pero apuntados por separado son distintos y se quedan los dos.</li>
+      </ul>
+      <div class="acciones"><button type="button" class="btn" data-goto="lista">Volver a la lista</button></div>
+    </section>
+  </main>
+
+  <!-- Escáner -->
+  <div id="scanner" class="scanner" role="dialog" aria-modal="true" aria-labelledby="t-scan" hidden>
+    <div class="scanner-box">
+      <h2 id="t-scan">Apunta al código de barras</h2>
+      <video id="scan-video" playsinline muted></video>
+      <p id="scan-msg" class="ayuda" aria-live="polite"></p>
+      <button type="button" class="btn btn-primary" id="btn-scan-cerrar">Cerrar cámara</button>
+    </div>
+  </div>
+
+  <!-- Mensaje con deshacer -->
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden>
+    <span id="toast-text"></span>
+    <button type="button" class="btn btn-small btn-light" id="toast-undo">Deshacer</button>
+  </div>
+
+  <script src="logic.js"></script>
+  <script src="db.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

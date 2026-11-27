@@ -1,7 +1,9 @@
-/* Caducidades - interfaz. Sin dependencias, sin red: todo se guarda en IndexedDB del dispositivo. */
+/* Caducidades - interfaz. Sin dependencias: todo se guarda en IndexedDB del dispositivo. La única red opcional
+ * es el servidor de avisos de config.js (0.1.3), que solo recibe la suscripción push y una fecha (push.js). */
 (function () {
   'use strict';
   var L = self.CadLogic;
+  var P = self.CadPush;
   var db = null;
   var VIEWS = ['lista', 'anadir', 'historial', 'avisos', 'instalar', 'copia'];
   var ALERT_VIEWS = ['lista', 'avisos']; // N3: la franja «Revisa tu despensa» solo sale aquí
@@ -26,7 +28,10 @@
     installPrompt: null,
     formGen: 0,             // B7: sube con cada resetForm; una búsqueda de código vieja no rellena nada
     exportFile: null,
-    importData: null
+    importData: null,
+    pushKey: null,          // clave pública VAPID del servidor (se pide al abrir «Avisos» para no perder el gesto)
+    pushTimer: null,
+    pushBusy: false
   };
 
   function $(id) { return document.getElementById(id); }
@@ -77,6 +82,8 @@
     return /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
   }
   function isAndroid() { return /Android/i.test(navigator.userAgent || ''); }
+  /** Brave se identifica igual que Chrome en el user agent; solo navigator.brave lo distingue. */
+  function isBrave() { return !!(navigator.brave && typeof navigator.brave.isBrave === 'function'); }
   function isStandalone() {
     return (self.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
   }
@@ -234,6 +241,10 @@
       renderHistory(r[1], r[2]);
       renderAlert(r[0], today);
       document.documentElement.setAttribute('data-ready', '1');
+      // 0.1.3d (N5): el cambio queda pendiente en IndexedDB ya, no a los 4 s; y se guarda la lista para flush().
+      ui.activeItems = r[0];
+      if (P.configured()) P.note(db, r[0]).catch(noop);
+      pushSync();
       return r[0];
     }).catch(function (e) { showError('No he podido leer tus datos. ' + friendly(e)); });
   }
@@ -741,27 +752,193 @@
   /* ---------- Avisos ---------- */
   function notifSupported() { return 'Notification' in self && 'serviceWorker' in navigator; }
 
+  function pushCapable() { return P.configured() && notifSupported() && 'PushManager' in self; }
+
   function updateNotifUI() {
     var st = $('notif-estado'), btn = $('btn-notif'), test = $('btn-notif-prueba');
-    btn.hidden = true; test.hidden = true;
+    btn.hidden = true; test.hidden = true; $('btn-push-off').hidden = true;
+    $('nota-servidor').hidden = P.configured(); $('nota-servidor-on').hidden = !P.configured();
+    var pe = $('push-estado');
+    pe.textContent = P.configured() ? '' : 'Avisos con la app cerrada: esta versión no tiene servidor de avisos.';
     if (!notifSupported()) {
       st.textContent = isIOS() && !isStandalone()
         ? 'En iPhone, para recibir avisos del sistema añade la app a la pantalla de inicio (iOS 16.4 o posterior) y ábrela desde allí. Mientras tanto verás el aviso dentro de la app.'
         : 'Este navegador no permite avisos del sistema. Verás el aviso dentro de la app al abrirla.';
-      return;
+      return Promise.resolve();
     }
     var p = Notification.permission;
     if (p === 'granted') { st.textContent = '✓ Avisos del sistema activados.'; test.hidden = false; }
-    else if (p === 'denied') st.textContent = '✖ Has bloqueado los avisos. Puedes permitirlos en los ajustes del navegador. Mientras tanto verás el aviso dentro de la app.';
+    else if (p === 'denied') st.textContent = '✖ Has bloqueado los avisos. Puedes permitirlos en los ajustes del navegador (mira «Cómo permitir los avisos»). Mientras tanto verás el aviso dentro de la app.';
     else { st.textContent = 'Los avisos del sistema están desactivados.'; btn.hidden = false; }
+    if (!P.configured()) return Promise.resolve();
+    if (!('PushManager' in self)) {
+      pe.textContent = isIOS() ? 'Avisos con la app cerrada: en iPhone hace falta abrirla desde la pantalla de inicio (iOS 16.4 o posterior).'
+        : 'Avisos con la app cerrada: este navegador no los admite. Verás el aviso al abrir la app.';
+      return Promise.resolve();
+    }
+    prefetchPushKey();
+    if (!db) return Promise.resolve();
+    return P.getState(db).then(function (ps) {
+      if (ps && ps.on) {
+        pe.textContent = '✓ Avisos con la app cerrada: activados. Cada día a las 9:00 (hora de Madrid), si hay algo caducado o que caduca en 3 días o menos.' +
+          (ps.pending ? ' Hay cambios pendientes de enviar: se reintentarán solos y se mandarán en cuanto el servidor responda.' : '');
+        $('btn-push-off').hidden = p === 'denied';
+        btn.hidden = true;
+      } else {
+        pe.textContent = ps && ps.lost ? 'Avisos con la app cerrada: se ha perdido la suscripción. Pulsa «Activar avisos» otra vez.'
+          : ps && ps.pendingDelete ? 'Avisos con la app cerrada: desactivados (falta borrarlos del servidor; se hará cuando vuelva la conexión).'
+          : 'Avisos con la app cerrada: desactivados.';
+        if (p !== 'denied') btn.hidden = false;
+      }
+    }).catch(noop);
+  }
+
+  /** Pide la clave pública del servidor por adelantado: así, al pulsar «Activar avisos», la suscripción se pide
+   *  en el mismo gesto (Safari en iPhone lo exige). Si no hay conexión, se intenta al pulsar. */
+  function prefetchPushKey() {
+    if (ui.pushKey || !P.configured()) return;
+    fetch(P.serverUrl() + '/api/config', { cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) { if (j && j.vapidPublicKey) ui.pushKey = j.vapidPublicKey; })
+      .catch(noop);
+  }
+
+  function pushHelp(text) {
+    $('push-ayuda-texto').textContent = text || '';
+    $('push-ayuda').hidden = !text;
+  }
+
+  function pushErrorText(e) {
+    var name = e && e.name, msg = (e && e.message) || '';
+    if (name === 'NotAllowedError' || (self.Notification && Notification.permission === 'denied'))
+      return 'No hay permiso para mostrar avisos. Permítelos en los ajustes del navegador y vuelve a pulsar «Activar avisos».';
+    if (name === 'NetworkError') return 'No hay conexión con el servidor de avisos. Inténtalo más tarde; mientras tanto verás el aviso al abrir la app.';
+    if (name === 'ServerError') return msg;
+    if (name === 'AbortError' || /push service|servicio push|registration failed/i.test(msg)) {
+      if (isBrave() && !isAndroid())
+        return 'Brave no ha podido activar los avisos con la app cerrada. Escribe brave://settings/privacy en la barra de direcciones, activa «Usar los servicios de Google para mensajes push», cierra Brave del todo, vuelve a abrir la app y pulsa «Activar avisos».';
+      return isBrave()
+        ? 'Brave no ha podido activar los avisos con la app cerrada. En Brave: menú ⋮ → Ajustes → Privacidad y seguridad → activa «Usar los servicios de Google para mensajes push» (ruta no comprobada en un Android real; si no la ves, busca «push» en los Ajustes de Brave), cierra Brave del todo, vuelve a abrir la app y pulsa «Activar avisos».'
+        : 'El servicio de avisos del navegador no está disponible (en Android hacen falta los servicios de Google Play). Mientras tanto verás el aviso al abrir la app.';
+    }
+    if (name === 'NotSupportedError') return 'Este navegador no puede recibir avisos con la app cerrada. Verás el aviso al abrir la app.';
+    return 'No se han podido activar los avisos con la app cerrada. ' + friendly(e);
+  }
+
+  function afterPermission(p) {
+    updateNotifUI();
+    if (p === 'granted') { registerPeriodic(); maybeNotify(false); }
+  }
+
+  /** «Activar avisos»: con servidor, pide la suscripción push en el mismo gesto (eso pide también el permiso);
+   *  sin servidor, solo el permiso de avisos del sistema, como en la 0.1.2. */
+  function onActivate() {
+    clearError('avisos'); pushHelp('');
+    if (!pushCapable()) return askPermission();
+    var reg = ui.reg;
+    var btn = $('btn-notif');
+    if (ui.pushBusy) return;
+    ui.pushBusy = true; btn.disabled = true;
+    $('push-estado').textContent = 'Activando los avisos…';
+    var subP;
+    if (reg && reg.active && reg.pushManager && ui.pushKey) {
+      try { subP = reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: P.b64uToBytes(ui.pushKey) }); }
+      catch (e) { subP = Promise.reject(e); }
+      subP = subP.catch(function (e) {
+        if (e && e.name === 'InvalidStateError') return null; // había otra suscripción con otra clave: enable() la cambia
+        throw e;
+      });
+    } else {
+      // Sin la clave aún (p. ej. sin conexión al abrir «Avisos»): primero el permiso, luego la suscripción.
+      subP = requestPermissionP().then(function (p) {
+        if (p !== 'granted') { var e = new Error('sin permiso'); e.name = 'NotAllowedError'; throw e; }
+        return null;
+      });
+    }
+    subP.then(function () {
+      afterPermission(Notification.permission);
+      return (reg ? Promise.resolve(reg) : swReady()).then(function (r) { return P.enable(db, r); });
+    }).then(function () {
+      toast('Avisos con la app cerrada activados.');
+    }).catch(function (e) {
+      var t = pushErrorText(e);
+      showError(t, $('err-avisos'));
+      if (/Brave|servicio de avisos del navegador|permiso/.test(t)) pushHelp('Tienes los pasos para tu navegador en «Cómo permitir los avisos».');
+    }).then(function () {
+      ui.pushBusy = false; btn.disabled = false;
+      updateNotifUI();
+    });
+  }
+
+  function onDeactivate() {
+    clearError('avisos'); pushHelp('');
+    var btn = $('btn-push-off');
+    btn.disabled = true;
+    (ui.reg ? Promise.resolve(ui.reg) : swReady()).then(function (reg) { return P.disable(db, reg); }).then(function (r) {
+      toast(r.serverDeleted ? 'Avisos con la app cerrada desactivados y borrados del servidor.' : 'Avisos desactivados. Se borrarán del servidor cuando vuelva la conexión.');
+    }).catch(function (e) {
+      showError('No se han podido desactivar los avisos. ' + friendly(e), $('err-avisos'));
+    }).then(function () { btn.disabled = false; updateNotifUI(); });
+  }
+
+  /** Manda al servidor la fecha de aviso si ha cambiado (tras cada cambio en los productos, al abrir y al volver la conexión).
+   *  0.1.3c (N1): los cambios se agrupan (se espera 4 s desde el último, y como mucho 30 s desde el primero) y se manda
+   *  solo la fecha más reciente, que se calcula al enviar. Si el servidor no la acepta, se reintenta respetando
+   *  Retry-After y con espera creciente hasta conseguirlo (y tras cerrar y abrir la app, por la hora guardada en el móvil). */
+  var PUSH_DEBOUNCE_MS = 4000, PUSH_MAXWAIT_MS = 30000;
+  function pushSync(force, ignoreRetry) {
+    if (!db || !P.configured()) return;
+    var now = Date.now();
+    if (!ui.pushFirst) ui.pushFirst = now;
+    ui.pushForce = ui.pushForce || !!force;
+    ui.pushIgnore = ui.pushIgnore || !!ignoreRetry;
+    clearTimeout(ui.pushTimer);
+    ui.pushTimer = setTimeout(runPushSync, Math.max(0, Math.min(PUSH_DEBOUNCE_MS, ui.pushFirst + PUSH_MAXWAIT_MS - now)));
+  }
+  function runPushSync() {
+    ui.pushTimer = 0;
+    if (ui.pushBusy) { ui.pushRerun = true; return; }
+    var opts = { force: !!ui.pushForce, ignoreRetry: !!ui.pushIgnore };
+    ui.pushFirst = 0; ui.pushForce = false; ui.pushIgnore = false;
+    ui.pushBusy = true;
+    P.sync(db, ui.reg, opts).then(function (r) {
+      if (r && (r.estado === 'pendiente' || r.estado === 'baja-pendiente')) schedulePushRetry(r.retryAt);
+      else { clearTimeout(ui.pushRetry); ui.pushRetry = 0; }
+      if (ui.view === 'avisos') updateNotifUI();
+    }).catch(noop).then(function () {
+      ui.pushBusy = false;
+      if (ui.pushRerun) { ui.pushRerun = false; pushSync(); }
+    });
+  }
+  /** 0.1.3d (N5): al ocultar o cerrar la app no se espera a los 4 s: se manda ya lo pendiente con fetch keepalive
+   *  (el navegador lo termina aunque se cierre la página) y se pide Background Sync. Una vez por ocultación. */
+  function pushFlush() {
+    if (!db || !P.configured() || ui.pushFlushed) return;
+    ui.pushFlushed = true;
+    if (ui.pushTimer) { clearTimeout(ui.pushTimer); ui.pushTimer = 0; ui.pushFirst = 0; }
+    P.flush(db, ui.reg, ui.activeItems).catch(noop);
+  }
+  function schedulePushRetry(retryAt) {
+    clearTimeout(ui.pushRetry);
+    ui.pushRetry = setTimeout(function () { ui.pushRetry = 0; pushSync(); }, retryAt ? Math.max(1000, retryAt - Date.now() + 250) : 15000);
+  }
+
+  function requestPermissionP() {
+    return new Promise(function (resolve) {
+      var done = false;
+      function after(p) { if (!done) { done = true; resolve(p); } }
+      try {
+        var r = Notification.requestPermission(after);
+        if (r && typeof r.then === 'function') r.then(after, function () { after(Notification.permission); });
+      } catch (e) { after(Notification.permission); }
+    });
   }
 
   function askPermission() {
     var done = false;
     function after(p) {
       if (done) return; done = true;
-      updateNotifUI();
-      if (p === 'granted') { registerPeriodic(); maybeNotify(false); }
+      afterPermission(p);
     }
     try {
       var r = Notification.requestPermission(after);
@@ -798,8 +975,12 @@
   /* ---------- Instalar ---------- */
   function updateInstallUI() {
     var st = $('inst-estado');
-    var here = isIOS() ? 'guia-iphone' : isAndroid() ? 'guia-android' : 'guia-pc';
-    ['guia-android', 'guia-iphone', 'guia-pc'].forEach(function (id) {
+    var here = isIOS() ? 'guia-iphone' : isAndroid() ? (isBrave() ? 'guia-brave' : 'guia-android') : 'guia-pc';
+    // Brave en el ordenador no tiene «Ajustes de Android»: su propia guía (H4 de la QA de la 0.1.3).
+    var avisosHere = isIOS() ? 'avisos-iphone' : isBrave() ? (isAndroid() ? 'avisos-brave' : 'avisos-brave-pc') : 'avisos-chrome';
+    ['avisos-chrome', 'avisos-brave', 'avisos-brave-pc', 'avisos-iphone'].forEach(function (id) { $(id).classList.toggle('este', id === avisosHere); });
+    $('avisos-chrome').parentNode.insertBefore($(avisosHere), $('t-permitir').nextElementSibling.nextElementSibling); // tras el título y su nota
+    ['guia-android', 'guia-brave', 'guia-iphone', 'guia-pc'].forEach(function (id) {
       var g = $(id);
       g.classList.toggle('este', id === here);
       var h3 = g.querySelector('h3');
@@ -908,7 +1089,13 @@
     $('btn-scan-cerrar').addEventListener('click', function () { closeScanner(); $('btn-scan').focus(); });
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !$('scanner').hidden) closeScanner(); });
     $('toast-undo').addEventListener('click', function () { if (ui.lastMarkedId) undo(ui.lastMarkedId); $('toast').hidden = true; });
-    $('btn-notif').addEventListener('click', askPermission);
+    $('btn-notif').addEventListener('click', onActivate);
+    $('btn-push-off').addEventListener('click', onDeactivate);
+    $('btn-push-ayuda').addEventListener('click', function () {
+      navigate('instalar');
+      var t = $('t-permitir'); t.setAttribute('tabindex', '-1'); t.scrollIntoView({ block: 'start' }); t.focus({ preventScroll: true });
+    });
+    window.addEventListener('online', function () { pushSync(false, true); }); // al volver la conexión no se espera
     $('btn-notif-prueba').addEventListener('click', function () { maybeNotify(true); });
     $('btn-exportar').addEventListener('click', prepareExport);
     $('btn-compartir').addEventListener('click', shareExport);
@@ -932,11 +1119,13 @@
     window.addEventListener('popstate', onPopState);
     document.addEventListener('visibilitychange', function () {
       if (document.visibilityState === 'visible') {
+        ui.pushFlushed = false;
         refresh(); maybeNotify(false);
         if (ui.reg) ui.reg.update().catch(noop);
-      }
+      } else pushFlush();
     });
-    window.addEventListener('pagehide', stopScan);
+    window.addEventListener('pagehide', function (e) { pushFlush(); stopScan(e); });
+    window.addEventListener('pageshow', function () { ui.pushFlushed = false; });
   }
 
   function start() {

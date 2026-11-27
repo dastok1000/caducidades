@@ -1,6 +1,6 @@
 # Caducidades
 
-App para el móvil que apunta lo que tienes en casa y te avisa antes de que caduque. Es una PWA: se instala en la pantalla de inicio y funciona sin conexión. Tus datos se quedan solo en tu móvil; no hay cuentas ni servidor de datos.
+App para el móvil que apunta lo que tienes en casa y te avisa antes de que caduque. Es una PWA: se instala en la pantalla de inicio y funciona sin conexión. Tus datos se quedan solo en tu móvil y no hay cuentas. Si activas los avisos, un servidor solo guarda la suscripción de avisos de tu móvil y la fecha del próximo aviso; nunca los productos, las fotos ni los códigos.
 
 Ábrela aquí: https://dastok1000.github.io/caducidades/
 

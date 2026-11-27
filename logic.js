@@ -6,7 +6,7 @@
 (function (root) {
   'use strict';
 
-  var APP_VERSION = '0.1.2';
+  var APP_VERSION = '0.1.3e';
   var SOON_DAYS = 3; // fijo (no configurable): 0..3 días => "pronto"; 4 o más => "bien"
   var CATEGORIES = [
     'Lácteos', 'Carne y pescado', 'Fruta y verdura', 'Panadería',
@@ -134,6 +134,27 @@
       if (s === 'caducado') out.expired.push(i);
       else if (s === 'pronto') out.soon.push(i);
     });
+    return out;
+  }
+
+  /** 0.1.3 - avisos con la app cerrada: primer día (AAAA-MM-DD) en que habrá algo caducado o que caduca en
+   *  SOON_DAYS días o menos, o null si no hay nada activo. Es lo ÚNICO de los productos que sale del móvil.
+   *  Desde ese día, todos los días hay algo que avisar hasta que el usuario cambie sus productos (y entonces
+   *  se calcula y se envía de nuevo), así que basta una fecha. */
+  function alertFromDate(items) {
+    var min = null;
+    items.forEach(function (i) {
+      if (i.state && i.state !== STATES.ACTIVE) return;
+      if (!isValidYMD(i.expiry)) return;
+      if (min === null || i.expiry < min) min = i.expiry;
+    });
+    return min === null ? null : addDays(min, -SOON_DAYS);
+  }
+
+  /** Días (AAAA-MM-DD) entre 'from' y 'to' (incluidos) en que se avisaría, para mostrarlo o probarlo. */
+  function alertDays(items, from, to) {
+    var out = [], d = from;
+    while (d <= to) { if (summarizeAlerts(items, d).expired.length || summarizeAlerts(items, d).soon.length) out.push(d); d = addDays(d, 1); }
     return out;
   }
 
@@ -343,12 +364,12 @@
       return { ok: false, error: 'Esta copia se hizo con una versión más nueva de la app (formato ' + obj.formatVersion + '). Actualiza la app y vuelve a intentarlo.' };
     var keys = Object.keys(obj);
     for (var i = 0; i < keys.length; i++) if (TOP_KEYS.indexOf(keys[i]) < 0) return { ok: false, error: 'La copia tiene un dato desconocido («' + keys[i] + '»).' };
-    if (obj.app !== 'Caducidades' || typeof obj.appVersion !== 'string' || !/^\d+\.\d+\.\d+$/.test(obj.appVersion))
+    if (obj.app !== 'Caducidades' || typeof obj.appVersion !== 'string' || !/^\d+\.\d+\.\d+[a-z]?$/.test(obj.appVersion)) // desde la 0.1.3e admite una letra final (0.1.3e)
       return { ok: false, error: 'La copia está dañada: falta la versión de la app.' };
     if (!isISO(obj.exportedAt)) return { ok: false, error: 'La copia está dañada: falta la fecha en que se hizo.' };
     if (!Array.isArray(obj.items)) return { ok: false, error: 'La copia está dañada: falta la lista de productos.' };
     if (obj.items.length > BACKUP_MAX_ITEMS) return { ok: false, error: 'La copia tiene demasiados productos (máximo ' + BACKUP_MAX_ITEMS + ').' };
-    var items = [], seen = {}, photos = 0;
+    var items = [], seen = Object.create(null), photos = 0; // 0.1.3 (H1): sin prototipo, «constructor» o «__proto__» no chocan
     for (i = 0; i < obj.items.length; i++) {
       var r = validateBackupItem(obj.items[i], i + 1);
       if (r.error) return { ok: false, error: 'La copia no es válida. ' + r.error + ' No se ha cambiado nada.' };
@@ -371,11 +392,11 @@
    *  - 'sustituir': se borra todo lo del móvil y queda exactamente lo del archivo.
    *  Dos productos con distinto id son distintos aunque tengan el mismo nombre o código (pueden ser dos paquetes). */
   function planImport(existing, incoming, mode) {
-    var byId = {};
+    var byId = Object.create(null);
     existing.forEach(function (e) { byId[e.id] = e; });
     var plan = { mode: mode, put: [], added: 0, updated: 0, kept: 0, removed: 0, total: incoming.length };
     if (mode === 'sustituir') {
-      var inIds = {};
+      var inIds = Object.create(null);
       incoming.forEach(function (it) { inIds[it.id] = true; if (byId[it.id]) plan.updated++; else plan.added++; plan.put.push(it); });
       plan.removed = existing.filter(function (e) { return !inIds[e.id]; }).length;
       return plan;
@@ -396,6 +417,7 @@
     daysUntil: daysUntil, addDays: addDays, statusFromDays: statusFromDays, statusOf: statusOf,
     statusText: statusText, formatYMD: formatYMD, sortItems: sortItems,
     summarizeAlerts: summarizeAlerts, alertMessage: alertMessage, validateItem: validateItem,
+    alertFromDate: alertFromDate, alertDays: alertDays,
     BARCODE_MAX: BARCODE_MAX, barcodeProblem: barcodeProblem, checkScannedCode: checkScannedCode,
     plural: plural, listSummary: listSummary, historySummary: historySummary,
     BACKUP_FORMAT: BACKUP_FORMAT, BACKUP_FORMAT_VERSION: BACKUP_FORMAT_VERSION, BACKUP_MAX_BYTES: BACKUP_MAX_BYTES,

@@ -79,6 +79,10 @@ h3 { font-size: 1.2rem; margin: 1.25rem 0 .5rem; }
 .guia.este { border-color: var(--primario); border-width: 3px; }
 .guia ol { padding-left: 1.4rem; }
 .guia li { margin-bottom: .35rem; }
+.guia h4 { font-size: 1.1rem; margin: .75rem 0 .25rem; }
+.guia .ayuda { margin-top: 0; }
+#push-estado:empty { display: none; }
+#t-permitir { scroll-margin-top: 9rem; }
 .oculto { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; clip: rect(0 0 0 0); }
 .fila-fotos { display: flex; gap: .5rem; flex-wrap: wrap; }
 .fila-fotos .btn { flex: 1 1 8rem; }

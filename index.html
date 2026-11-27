@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; media-src 'self' blob: mediastream:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; media-src 'self' blob: mediastream:; connect-src 'self' https://caducidades-avisos.caducidades-avisos.workers.dev; worker-src 'self'; manifest-src 'self'; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
   <meta name="referrer" content="no-referrer">
   <title>Caducidades</title>
   <meta name="description" content="Apunta lo que tienes en casa y te aviso antes de que caduque. Los datos se quedan en tu móvil.">
@@ -153,21 +153,28 @@
       </div>
       <p>Cada vez que abras la app verás arriba un aviso con lo caducado y lo que caduca en 3 días o menos.</p>
       <p id="notif-estado" class="estado-notif"></p>
+      <p id="push-estado" class="estado-notif" aria-live="polite"></p>
       <div class="acciones">
-        <button type="button" class="btn btn-primary" id="btn-notif" hidden>Activar avisos del sistema</button>
+        <button type="button" class="btn btn-primary" id="btn-notif" hidden>Activar avisos</button>
         <button type="button" class="btn" id="btn-notif-prueba" hidden>Enviar un aviso de prueba</button>
+        <button type="button" class="btn" id="btn-push-off" hidden>Desactivar avisos</button>
+      </div>
+      <div id="push-ayuda" class="confirm" hidden>
+        <p id="push-ayuda-texto"></p>
+        <div class="acciones"><button type="button" class="btn" id="btn-push-ayuda">🔔 Cómo permitir los avisos</button></div>
       </div>
       <h3>Importante</h3>
       <ul class="notas">
-        <li>No hay ningún servidor: los avisos salen cuando abres o usas la app. En algunos Android con la app instalada puede revisarse sola de vez en cuando, pero no está garantizado.</li>
+        <li id="nota-servidor">Esta versión no tiene servidor de avisos: los avisos salen cuando abres o usas la app. En algunos Android con la app instalada puede revisarse sola de vez en cuando, pero no está garantizado.</li>
+        <li id="nota-servidor-on" hidden>Con «Activar avisos», un pequeño servidor te manda cada día a las 9:00 (hora de Madrid) un aviso si tienes algo caducado o que caduca en 3 días o menos, aunque la app esté cerrada. Al servidor solo le llega la dirección de avisos de tu navegador y una fecha (el primer día en que toca avisar): nunca nombres, fotos, códigos ni cuántos productos tienes. El texto del aviso lo compone tu móvil.</li>
         <li>En iPhone, los avisos solo funcionan con la app añadida a la pantalla de inicio y con iOS 16.4 o posterior.</li>
         <li>Tus datos solo están en este dispositivo. Si borras los datos del navegador o desinstalas la app, se pierden: haz de vez en cuando una «Copia de seguridad».</li>
       </ul>
       <div class="acciones">
-        <button type="button" class="btn" data-goto="instalar">📲 Cómo instalarla</button>
+        <button type="button" class="btn" data-goto="instalar">📲 Cómo instalarla y permitir avisos</button>
         <button type="button" class="btn" data-goto="copia">💾 Copia de seguridad</button>
       </div>
-      <p class="version" id="version">Versión 0.1.2 · prototipo</p>
+      <p class="version" id="version">Versión 0.1.3e · prototipo</p>
     </section>
 
     <!-- INSTALAR -->
@@ -188,6 +195,25 @@
           <li>Ábrela desde el icono nuevo de la pantalla de inicio.</li>
         </ol>
       </div>
+      <div class="guia" id="guia-brave">
+        <h3>En Android (Brave)</h3>
+        <ol>
+          <li>Abre la app en Brave en una pestaña normal (en una pestaña privada no se puede instalar).</li>
+          <li>Pulsa el menú <strong>⋮</strong> (abajo a la derecha si tienes la barra abajo; si no, arriba a la derecha).</li>
+          <li>Elige «<strong>Añadir a pantalla de inicio</strong>» (en algunas versiones, «Instalar app») y confirma con «Añadir».</li>
+          <li>Si no aparece el icono: Ajustes de Android → Aplicaciones → Brave → Permisos, y permite «Accesos directos en pantalla de inicio» (en Xiaomi, Redmi y POCO viene desactivado). Vuelve a intentarlo.</li>
+        </ol>
+        <p class="ayuda">Puede que Brave no la añada a la lista de aplicaciones como Chrome y solo cree un acceso directo que abre la app en su propia ventana. Es normal.</p>
+        <h4 id="t-brave-atascada">Si se queda en «Descargando» y no termina de instalarse</h4>
+        <ol>
+          <li>Espera un minuto con buena conexión. Si sigue igual, cierra Brave del todo (quítala de las apps recientes).</li>
+          <li>Borra la caché de Brave (no borra tus productos): Ajustes del móvil → Aplicaciones → Brave → Almacenamiento → «Borrar caché».</li>
+          <li>Vuelve a abrir la app en Brave y, en el menú <strong>⋮</strong>, elige «<strong>Añadir a pantalla de inicio</strong>» (no «Instalar app»): crea el acceso directo sin descargar nada.</li>
+          <li>En un Honor (y otros con EMUI/MagicOS), mira el permiso de accesos directos: Ajustes → Apps → Brave → Permisos → «Crear accesos directos en pantalla de inicio» (o parecido) y actívalo. <em>Ruta no comprobada en un móvil real.</em></li>
+          <li>Si aún falla, borra los datos de esta web en Brave: menú <strong>⋮</strong> → Ajustes → Configuración de sitios → Todos los sitios → esta dirección → Borrar. <strong>Esto borra los productos guardados en Brave: antes haz una «Copia de seguridad»</strong> y después impórtala.</li>
+          <li>Como última opción, usa <strong>Chrome</strong> (pasos de «En Android (Chrome)»). Los datos de Brave y de Chrome son distintos: pásalos con la copia de seguridad.</li>
+        </ol>
+      </div>
       <div class="guia" id="guia-iphone">
         <h3>En iPhone (Safari)</h3>
         <ol>
@@ -201,6 +227,43 @@
         <h3>En el ordenador (Chrome o Edge)</h3>
         <ol>
           <li>Pulsa el icono de instalar de la barra de direcciones, o el menú y «Instalar Caducidades».</li>
+        </ol>
+      </div>
+      <h3 id="t-permitir">Permitir los avisos</h3>
+      <p class="ayuda">Los avisos con la app cerrada solo funcionan si la versión que usas tiene servidor de avisos (lo verás en «Avisos»).</p>
+      <div class="guia" id="avisos-chrome">
+        <h4>Chrome (Android)</h4>
+        <ol>
+          <li>En «Avisos», pulsa «<strong>Activar avisos</strong>» y elige «Permitir».</li>
+          <li>Si los bloqueaste: menú <strong>⋮</strong> → Ajustes → Configuración de sitios → Notificaciones, y permite esta dirección. Mira también Ajustes de Android → Aplicaciones → Chrome → Notificaciones.</li>
+          <li>Con la app instalada, revisa Ajustes de Android → Notificaciones → Caducidades.</li>
+        </ol>
+      </div>
+      <div class="guia" id="avisos-brave">
+        <h4>Brave (Android)</h4>
+        <p class="ayuda"><em>Esta ruta de menú no se ha comprobado en un Android real; si no la encuentras, busca «push» con la lupa de los Ajustes de Brave.</em></p>
+        <ol>
+          <li>Menú <strong>⋮</strong> → Ajustes → Privacidad y seguridad → activa «<strong>Usar los servicios de Google para mensajes push</strong>». Sin esto Brave no recibe avisos con la app cerrada. Cierra Brave del todo y vuelve a abrirla.</li>
+          <li>En «Avisos», pulsa «<strong>Activar avisos</strong>» y elige «Permitir».</li>
+          <li>Si no llegan: Ajustes de Android → Aplicaciones → Brave → Notificaciones, actívalas; y en Brave, menú ⋮ → Ajustes → Configuración de sitios → Notificaciones, permite esta dirección.</li>
+          <li>Los escudos (Shields) en su ajuste normal no bloquean la app ni los avisos: no hace falta bajarlos. Solo «Bloquear cookies: todas» impide guardar los datos.</li>
+          <li>Si el móvil cierra Brave para ahorrar batería, ponla «Sin restricciones» en Ajustes de Android → Aplicaciones → Brave → Batería.</li>
+        </ol>
+      </div>
+      <div class="guia" id="avisos-brave-pc">
+        <h4>Brave (ordenador)</h4>
+        <ol>
+          <li>Escribe <strong>brave://settings/privacy</strong> en la barra de direcciones y activa «<strong>Usar los servicios de Google para mensajes push</strong>». Cierra Brave del todo y vuelve a abrirlo.</li>
+          <li>En «Avisos», pulsa «<strong>Activar avisos</strong>» y elige «Permitir».</li>
+        </ol>
+      </div>
+      <div class="guia" id="avisos-iphone">
+        <h4>Safari (iPhone, iOS 16.4 o posterior)</h4>
+        <ol>
+          <li>Primero añade la app a la pantalla de inicio (pasos de arriba) y ábrela desde el icono: en una pestaña de Safari no hay avisos.</li>
+          <li>En «Avisos», pulsa «<strong>Activar avisos</strong>» y elige «Permitir».</li>
+          <li>Si los bloqueaste: Ajustes del iPhone → Notificaciones → Caducidades → Permitir notificaciones.</li>
+          <li>Lo apuntado en la pestaña de Safari y en la app de la pantalla de inicio pueden ser datos separados: haz una «Copia de seguridad» en Safari e impórtala en la app.</li>
         </ol>
       </div>
       <p class="ayuda">Para instalarla, la dirección tiene que ser HTTPS o «localhost». Tus datos se quedan solo en este dispositivo y en esta dirección.</p>
@@ -275,8 +338,10 @@
     <button type="button" class="btn btn-small btn-light" id="toast-undo">Deshacer</button>
   </div>
 
+  <script src="config.js"></script>
   <script src="logic.js"></script>
   <script src="db.js"></script>
+  <script src="push.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -1,13 +1,15 @@
-/* Caducidades - service worker: precachea todo para funcionar sin conexión
- * y muestra avisos locales (sin servidor push). Solo atiende peticiones del propio origen.
+/* Caducidades - service worker: precachea todo para funcionar sin conexión, muestra los avisos locales y,
+ * desde la 0.1.3, los avisos push con la app cerrada (si hay servidor en config.js). Solo atiende (y cachea)
+ * peticiones GET del propio origen; las llamadas al servidor de avisos no pasan por la caché.
  * El bloque entre las marcas lo genera `node tools/build-sw.mjs`: BUILD es un hash del contenido de todos
  * los archivos precacheados, así que cualquier cambio en ellos crea una caché nueva sin tocar nada a mano. */
 'use strict';
 // <generado por tools/build-sw.mjs: no editar a mano>
-var BUILD = '32f3a039ec6c7a37';
+var BUILD = 'd814afb52fdd98dd';
 var PRECACHE = [
   './',
   'app.js',
+  'config.js',
   'db.js',
   'icons/apple-touch-icon.png',
   'icons/icon-192.png',
@@ -17,12 +19,15 @@ var PRECACHE = [
   'index.html',
   'logic.js',
   'manifest.webmanifest',
+  'push.js',
   'styles.css'
 ];
 // </generado>
 var CACHE = 'caducidades-' + BUILD;
 
+importScripts('config.js');
 importScripts('logic.js', 'db.js');
+importScripts('push.js');
 
 self.addEventListener('install', function (event) {
   event.waitUntil(caches.open(CACHE).then(function (c) {
@@ -77,6 +82,62 @@ function checkAndNotify() {
     });
   }).catch(function () {});
 }
+
+/* ---------- 0.1.3: avisos push con la app cerrada ----------
+ * El servidor manda cada día a las 9:00 (Madrid) un mensaje cifrado y genérico, sin nombres. Aquí se
+ * compone el texto con los datos del propio móvil. SIEMPRE se muestra un aviso (Safari en iPhone lo exige
+ * y Chrome mostraría uno suyo): si no se pueden leer los datos, uno genérico. */
+var GENERIC = 'Puede que tengas productos caducados o a punto de caducar. Ábrela para revisarlos.';
+
+function readPushData(event) {
+  try { var d = event.data ? event.data.json() : null; return d && typeof d === 'object' ? d : {}; } catch (e) { return {}; }
+}
+
+function onPush(event) {
+  var L = self.CadLogic;
+  var d = readPushData(event); // el contenido no lleva datos de productos: solo el tipo y el día
+  var today = L.todayYMD();
+  // 0.1.3b: al activar, el servidor comprueba la suscripción con un aviso de tipo «alta» (iOS exige enseñarlo).
+  if (d.tipo === 'alta') {
+    return self.registration.showNotification('Caducidades', {
+      body: 'Avisos activados: cada día a las 9:00 te avisaré si hay algo caducado o a punto de caducar.',
+      tag: 'caducidades-alta', icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', lang: 'es', silent: true, data: { origen: 'push' }
+    });
+  }
+  function show(body, silent) {
+    return self.registration.showNotification('Caducidades', {
+      body: body, tag: 'caducidades-resumen', icon: 'icons/icon-192.png', badge: 'icons/icon-192.png', lang: 'es',
+      silent: !!silent, data: { origen: 'push' }
+    });
+  }
+  return self.CadDB.open().then(function (db) {
+    return Promise.all([db.listActive(), db.getMeta('lastNotified')]).then(function (r) {
+      var body = L.alertMessage(L.summarizeAlerts(r[0], today));
+      // Ya avisado hoy al abrir la app: se sustituye el aviso sin volver a sonar.
+      return show(body || 'Hoy no hay nada caducado ni a punto de caducar.', r[1] === today)
+        .then(function () { return body ? db.setMeta('lastNotified', today) : null; })
+        .then(function () { return self.CadPush.sync(db, self.registration, { force: !body }); }) // corrige el servidor si iba atrasado
+        .catch(function () {})
+        .then(function () { db.close(); });
+    }, function (e) { db.close(); throw e; });
+  }).catch(function () { return show(GENERIC, false); });
+}
+
+self.addEventListener('push', function (event) { event.waitUntil(onPush(event)); });
+
+self.addEventListener('pushsubscriptionchange', function (event) {
+  event.waitUntil(self.CadDB.open().then(function (db) {
+    return self.CadPush.renew(db, self.registration, event.newSubscription || null).then(function () { db.close(); });
+  }).catch(function () {}));
+});
+
+// Background Sync (solo navegadores Chromium): reintenta lo que no se pudo mandar sin conexión.
+self.addEventListener('sync', function (event) {
+  if (event.tag !== self.CadPush.SYNC_TAG) return;
+  event.waitUntil(self.CadDB.open().then(function (db) {
+    return self.CadPush.sync(db, self.registration).then(function (r) { db.close(); if (r.estado === 'pendiente' || r.estado === 'baja-pendiente') throw new Error('reintentar'); });
+  }));
+});
 
 // Solo existe en algunos navegadores (Chrome/Edge en Android con la app instalada); no está garantizado.
 self.addEventListener('periodicsync', function (event) {
